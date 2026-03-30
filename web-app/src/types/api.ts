@@ -19,7 +19,7 @@ export interface ErrorResponse {
   success: false;
   message: string;
   code: string;
-  details?: any;
+  details?: unknown;
 }
 
 export type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;
@@ -182,7 +182,7 @@ export interface CastGraph {
 }
 
 export interface CastCoverage {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================================================
@@ -279,7 +279,7 @@ export interface StoryKnowledge {
 }
 
 export interface KnowledgeSearchHit {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface KnowledgeSearchResponse {
@@ -299,7 +299,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   ts: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface ChatThread {
@@ -438,7 +438,7 @@ export interface ChatClearPayload {
 export interface AppendEventPayload {
   role: 'system' | 'assistant';
   content: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface DigestPayload {
@@ -489,5 +489,5 @@ export interface LogEntry {
   level: string;
   logger: string;
   message: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
