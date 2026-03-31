@@ -2,38 +2,40 @@ import { apiClient } from './config'
 
 export interface ChapterDTO {
   id: string
+  novel_id: string
   number: number
   title: string
   content: string
+  status: string
   word_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface UpdateChapterRequest {
+  title: string
+  content: string
 }
 
 export const chapterApi = {
   /**
-   * Get chapter by ID
-   * GET /api/v1/chapters/{chapterId}
+   * List all chapters for a novel
+   * GET /api/v1/novels/{novelId}/chapters
    */
-  getChapter: (chapterId: string) =>
-    apiClient.get<ChapterDTO>(`/chapters/${chapterId}`) as Promise<ChapterDTO>,
+  listChapters: (novelId: string) =>
+    apiClient.get<ChapterDTO[]>(`/novels/${novelId}/chapters`) as Promise<ChapterDTO[]>,
 
   /**
-   * Update chapter content
-   * PUT /api/v1/chapters/{chapterId}/content
+   * Get a specific chapter by number
+   * GET /api/v1/novels/{novelId}/chapters/{chapterNumber}
    */
-  updateChapterContent: (chapterId: string, content: string) =>
-    apiClient.put<ChapterDTO>(`/chapters/${chapterId}/content`, { content }) as Promise<ChapterDTO>,
+  getChapter: (novelId: string, chapterNumber: number) =>
+    apiClient.get<ChapterDTO>(`/novels/${novelId}/chapters/${chapterNumber}`) as Promise<ChapterDTO>,
 
   /**
-   * Delete a chapter
-   * DELETE /api/v1/chapters/{chapterId}
+   * Update a chapter
+   * PUT /api/v1/novels/{novelId}/chapters/{chapterNumber}
    */
-  deleteChapter: (chapterId: string) =>
-    apiClient.delete<void>(`/chapters/${chapterId}`) as Promise<void>,
-
-  /**
-   * List chapters by novel
-   * GET /api/v1/chapters/novels/{novelId}/chapters
-   */
-  listChaptersByNovel: (novelId: string) =>
-    apiClient.get<ChapterDTO[]>(`/chapters/novels/${novelId}/chapters`) as Promise<ChapterDTO[]>,
+  updateChapter: (novelId: string, chapterNumber: number, data: UpdateChapterRequest) =>
+    apiClient.put<ChapterDTO>(`/novels/${novelId}/chapters/${chapterNumber}`, data) as Promise<ChapterDTO>,
 }
