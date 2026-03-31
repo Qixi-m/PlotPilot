@@ -213,3 +213,59 @@ class TestPlotArc:
         plot_arc = PlotArc(id="arc-1", novel_id=novel_id)
 
         assert plot_arc.get_next_plot_point(1) is None
+
+    def test_add_plot_point_none_validation(self):
+        """测试添加剧情点 - None 验证"""
+        novel_id = NovelId("novel-123")
+        plot_arc = PlotArc(id="arc-1", novel_id=novel_id)
+
+        with pytest.raises(ValueError, match="Plot point cannot be None"):
+            plot_arc.add_plot_point(None)
+
+    def test_get_expected_tension_invalid_chapter_number(self):
+        """测试获取期望张力 - 无效章节号"""
+        novel_id = NovelId("novel-123")
+        plot_arc = PlotArc(id="arc-1", novel_id=novel_id)
+
+        with pytest.raises(ValueError, match="Chapter number must be positive"):
+            plot_arc.get_expected_tension(0)
+
+        with pytest.raises(ValueError, match="Chapter number must be positive"):
+            plot_arc.get_expected_tension(-1)
+
+    def test_get_next_plot_point_invalid_chapter_number(self):
+        """测试获取下一个剧情点 - 无效章节号"""
+        novel_id = NovelId("novel-123")
+        plot_arc = PlotArc(id="arc-1", novel_id=novel_id)
+
+        with pytest.raises(ValueError, match="Chapter number must be positive"):
+            plot_arc.get_next_plot_point(0)
+
+        with pytest.raises(ValueError, match="Chapter number must be positive"):
+            plot_arc.get_next_plot_point(-1)
+
+    def test_get_expected_tension_same_chapter_points(self):
+        """测试获取期望张力 - 相同章节的剧情点（防止除零）"""
+        novel_id = NovelId("novel-123")
+        plot_arc = PlotArc(id="arc-1", novel_id=novel_id)
+
+        # Add two points with the same chapter number (edge case)
+        point1 = PlotPoint(
+            chapter_number=5,
+            point_type=PlotPointType.OPENING,
+            description="First event",
+            tension=TensionLevel.LOW
+        )
+        point2 = PlotPoint(
+            chapter_number=5,
+            point_type=PlotPointType.CLIMAX,
+            description="Second event",
+            tension=TensionLevel.PEAK
+        )
+
+        plot_arc.add_plot_point(point1)
+        plot_arc.add_plot_point(point2)
+
+        # Should return the first point's tension without division by zero
+        result = plot_arc.get_expected_tension(5)
+        assert result in [TensionLevel.LOW, TensionLevel.PEAK]
