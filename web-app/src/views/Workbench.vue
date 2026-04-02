@@ -33,7 +33,12 @@
               </template>
 
               <template #2>
-                <SettingsPanel :slug="slug" :current-panel="rightPanel" :bible-key="biblePanelKey" />
+                <SettingsPanel
+                  :slug="slug"
+                  :current-panel="rightPanel"
+                  :bible-key="biblePanelKey"
+                  :current-chapter="currentChapter"
+                />
               </template>
             </n-split>
           </template>
@@ -100,6 +105,11 @@ const {
   goToChapter,
   handleChapterSelect,
 } = useWorkbench({ slug, chatAreaRef: workAreaRef })
+
+const currentChapter = computed(() => {
+  if (!currentChapterId.value) return null
+  return chapters.value.find(ch => ch.id === currentChapterId.value) || null
+})
 
 onMounted(async () => {
   try {

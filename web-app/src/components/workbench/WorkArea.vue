@@ -50,16 +50,51 @@
             </div>
 
             <div class="editor-footer">
-              <n-space :size="8">
+              <n-space :size="8" align="center">
                 <n-text depth="3">字数: {{ wordCount }}</n-text>
                 <n-divider vertical />
                 <n-button size="tiny" @click="handleGenerateChapter" :loading="generating">
                   生成本章
                 </n-button>
                 <n-button size="tiny" @click="handleReviewChapter" :loading="reviewing" :disabled="currentChapter.word_count === 0">
-                  审稿
+                  AI审稿
                 </n-button>
               </n-space>
+            </div>
+
+            <!-- 审稿结果展示区域 -->
+            <div v-if="reviewResult" class="review-result">
+              <n-card title="审稿结果" size="small" :bordered="false">
+                <template #header-extra>
+                  <n-button size="tiny" text @click="reviewResult = null">
+                    关闭
+                  </n-button>
+                </template>
+                <n-space vertical :size="12">
+                  <div class="review-score">
+                    <n-text strong>评分: </n-text>
+                    <n-tag :type="reviewResult.score >= 80 ? 'success' : reviewResult.score >= 60 ? 'warning' : 'error'" size="large">
+                      {{ reviewResult.score }}/100
+                    </n-tag>
+                  </div>
+                  <n-divider style="margin: 8px 0" />
+                  <div v-if="reviewResult.suggestions && reviewResult.suggestions.length > 0">
+                    <n-text strong>改进建议:</n-text>
+                    <n-list bordered style="margin-top: 8px">
+                      <n-list-item v-for="(suggestion, index) in reviewResult.suggestions" :key="index">
+                        <n-thing>
+                          <template #header>
+                            <n-text>{{ index + 1 }}. {{ suggestion }}</n-text>
+                          </template>
+                        </n-thing>
+                      </n-list-item>
+                    </n-list>
+                  </div>
+                  <div v-else>
+                    <n-text depth="3">暂无改进建议</n-text>
+                  </div>
+                </n-space>
+              </n-card>
             </div>
           </div>
 
@@ -218,6 +253,7 @@ const loading = computed(() => props.chapterLoading)
 const saving = ref(false)
 const generating = ref(false)
 const reviewing = ref(false)
+const reviewResult = ref<{ score: number; suggestions: string[] } | null>(null)
 
 const currentChapter = computed(() => {
   if (!props.currentChapterId) return null
@@ -316,13 +352,11 @@ const handleReviewChapter = async () => {
   reviewing.value = true
   try {
     const result = await workflowApi.reviewChapter(props.slug, currentChapter.value.id)
-    message.success(`审稿完成，评分: ${result.score}/100`)
-
-    if (result.suggestions.length > 0) {
-      outputVisible.value = true
-      outputText.value = '审稿建议：\n\n' + result.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')
-      activeTab.value = 'write'
+    reviewResult.value = {
+      score: result.score,
+      suggestions: result.suggestions || []
     }
+    message.success(`审稿完成，评分: ${result.score}/100`)
   } catch (error: any) {
     if (error.response?.status === 501) {
       message.warning('审稿功能开发中')

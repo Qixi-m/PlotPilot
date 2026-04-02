@@ -20,9 +20,12 @@
         >
           <n-thing :title="`第${ch.number}章`">
             <template #description>
-              <n-tag size="small" :type="ch.word_count > 0 ? 'success' : 'default'" round>
-                {{ ch.word_count > 0 ? '已收稿' : '未收稿' }}
-              </n-tag>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <n-text depth="3" style="font-size: 12px;">{{ ch.title }}</n-text>
+                <n-tag size="small" :type="ch.word_count > 0 ? 'success' : 'default'" round>
+                  {{ ch.word_count > 0 ? '已收稿' : '未收稿' }}
+                </n-tag>
+              </div>
             </template>
           </n-thing>
         </n-list-item>
