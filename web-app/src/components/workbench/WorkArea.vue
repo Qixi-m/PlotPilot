@@ -6,14 +6,6 @@
         <n-text depth="3" class="work-sub">{{ slug }}</n-text>
       </div>
       <n-space :size="12" align="center" wrap class="work-header-actions">
-        <n-button-group size="small">
-          <n-button :type="rightPanel === 'bible' ? 'primary' : 'default'" @click="setRightPanel('bible')">
-            设定
-          </n-button>
-          <n-button :type="rightPanel === 'knowledge' ? 'primary' : 'default'" @click="setRightPanel('knowledge')">
-            叙事与关系
-          </n-button>
-        </n-button-group>
         <n-button type="primary" size="small" @click="openHostedWriteModal">
           托管连写
         </n-button>
