@@ -6,6 +6,14 @@
           <span class="status-dot" :class="connectionStatus"></span>
           <n-text depth="3" style="font-size: 12px">{{ statusText }}</n-text>
           <n-tag size="tiny" :bordered="false">{{ logEvents.length }} 条</n-tag>
+          <n-button
+            size="tiny"
+            quaternary
+            :title="logCollapsed ? '展开时间线' : '只折叠下方日志时间线，写作进度仍显示'"
+            @click="logCollapsed = !logCollapsed"
+          >
+            {{ logCollapsed ? '展开日志' : '折叠日志' }}
+          </n-button>
         </n-space>
       </template>
 
@@ -30,57 +38,60 @@
         </n-text>
       </div>
 
-      <div class="stream-wrap">
-        <!-- 日志流容器 -->
-        <div ref="scrollContainer" class="stream-body" @scroll="handleScroll">
-          <n-timeline>
-            <n-timeline-item
-              v-for="event in logEvents"
-              :key="event.id"
-              :type="getEventType(event)"
-              :time="formatTime(event.timestamp)"
-            >
-              <template #icon>
-                <span class="event-icon">{{ getEventIcon(event) }}</span>
-              </template>
-              <div
-                class="event-content"
-                :class="`event-content--${event.type}`"
+      <!-- 仅折叠时间线；写作进度条与卡片标题始终可见 -->
+      <n-collapse-transition :show="!logCollapsed">
+        <div class="stream-wrap">
+          <!-- 日志流容器 -->
+          <div ref="scrollContainer" class="stream-body" @scroll="handleScroll">
+            <n-timeline>
+              <n-timeline-item
+                v-for="event in logEvents"
+                :key="event.id"
+                :type="getEventType(event)"
+                :time="formatTime(event.timestamp)"
               >
-                <n-text :type="getEventTextType(event)" class="event-message">
-                  {{ event.message }}
-                </n-text>
-                <n-text
-                  v-if="metaLine(event)"
-                  depth="3"
-                  class="event-metadata"
+                <template #icon>
+                  <span class="event-icon">{{ getEventIcon(event) }}</span>
+                </template>
+                <div
+                  class="event-content"
+                  :class="`event-content--${event.type}`"
                 >
-                  {{ metaLine(event) }}
-                </n-text>
-              </div>
-            </n-timeline-item>
-          </n-timeline>
+                  <n-text :type="getEventTextType(event)" class="event-message">
+                    {{ event.message }}
+                  </n-text>
+                  <n-text
+                    v-if="metaLine(event)"
+                    depth="3"
+                    class="event-metadata"
+                  >
+                    {{ metaLine(event) }}
+                  </n-text>
+                </div>
+              </n-timeline-item>
+            </n-timeline>
 
-          <!-- 空状态 -->
-          <n-empty v-if="logEvents.length === 0" description="等待日志流..." size="small" />
-        </div>
-
-        <!-- 悬浮的"新日志"提示按钮 -->
-        <transition name="fade">
-          <div
-            v-if="!isAutoScroll && hasNewLogs"
-            class="new-logs-indicator"
-            @click="() => scrollToBottom()"
-          >
-            <n-button size="small" type="success" circle>
-              <template #icon>
-                <span>⬇️</span>
-              </template>
-            </n-button>
-            <span class="new-logs-text">新日志</span>
+            <!-- 空状态 -->
+            <n-empty v-if="logEvents.length === 0" description="等待日志流..." size="small" />
           </div>
-        </transition>
-      </div>
+
+          <!-- 悬浮的"新日志"提示按钮 -->
+          <transition name="fade">
+            <div
+              v-if="!isAutoScroll && hasNewLogs && !logCollapsed"
+              class="new-logs-indicator"
+              @click="() => scrollToBottom()"
+            >
+              <n-button size="small" type="success" circle>
+                <template #icon>
+                  <span>⬇️</span>
+                </template>
+              </n-button>
+              <span class="new-logs-text">新日志</span>
+            </div>
+          </transition>
+        </div>
+      </n-collapse-transition>
     </n-card>
   </div>
 </template>
@@ -119,6 +130,8 @@ const connectionStatus = ref<'connected' | 'reconnecting' | 'disconnected' | 'en
 /** 服务端已发送 autopilot_complete 并关闭流，属正常结束，禁止重连刷屏 */
 const streamEndedNormally = ref(false)
 const endedSummary = ref('')
+/** 仅折叠下方时间线，不折叠写作进度与标题栏 */
+const logCollapsed = ref(false)
 /** 最新一条 progress 事件，用于顶部进度条（不入时间线，避免刷屏） */
 const latestProgress = ref<ProgressPayload | null>(null)
 
@@ -367,6 +380,7 @@ watch(
   () => {
     streamEndedNormally.value = false
     endedSummary.value = ''
+    logCollapsed.value = false
     latestProgress.value = null
     logEvents.value = []
     connectionStatus.value = 'disconnected'

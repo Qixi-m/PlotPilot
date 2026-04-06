@@ -64,9 +64,11 @@
       </div>
     </n-alert>
 
-    <!-- 审阅等待提示 -->
-    <n-alert v-if="needsReview" type="warning" style="margin: 4px 0; font-size: 12px">
-      ✍️ 大纲已生成，请确认后继续写作
+    <!-- 审阅等待：宏观规划完成后、或某一幕「首次」生成章节规划后各需确认一次；确认后同幕不会反复要求审批 -->
+    <n-alert v-if="needsReview" type="warning" :show-icon="true" style="margin: 4px 0; font-size: 12px">
+      <strong>待审阅确认</strong>：请在侧栏查看刚生成的大纲/结构，确认后点
+      <strong>「确认大纲，继续写作」</strong>。
+      宏观规划完成后会停一次；之后每一幕<strong>仅在首次生成该幕章节规划</strong>时再停一次，不会无限循环。
     </n-alert>
 
     <!-- 实时日志流 -->
