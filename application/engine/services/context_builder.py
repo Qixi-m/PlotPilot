@@ -130,8 +130,15 @@ class ContextBuilder:
         
         Returns:
             {
-                "context": "组装好的上下文字符串",
-                "token_usage": {...},
+                "layer1_text": "核心上下文（T0+T1）",
+                "layer2_text": "最近章节（T2）",
+                "layer3_text": "向量召回（T3）",
+                "token_usage": {
+                    "layer1": int,
+                    "layer2": int,
+                    "layer3": int,
+                    "total": int,
+                },
             }
         """
         allocation = self.budget_allocator.allocate(
@@ -142,17 +149,38 @@ class ContextBuilder:
             scene_director=scene_director,
         )
         
+        # 从 BudgetAllocation 中提取三层内容
+        layer1_parts = []
+        layer2_parts = []
+        layer3_parts = []
+        
+        layer1_tokens = 0
+        layer2_tokens = 0
+        layer3_tokens = 0
+        
+        for name, slot in allocation.slots.items():
+            if not slot.content.strip():
+                continue
+            
+            if slot.tier.value in ["t0_critical", "t1_compressible"]:
+                layer1_parts.append(f"=== {slot.name.upper()} ===\n{slot.content}")
+                layer1_tokens += slot.tokens
+            elif slot.tier.value == "t2_dynamic":
+                layer2_parts.append(f"=== {slot.name.upper()} ===\n{slot.content}")
+                layer2_tokens += slot.tokens
+            elif slot.tier.value == "t3_sacrificial":
+                layer3_parts.append(f"=== {slot.name.upper()} ===\n{slot.content}")
+                layer3_tokens += slot.tokens
+        
         return {
-            "context": allocation.get_final_context(),
+            "layer1_text": "\n\n".join(layer1_parts),
+            "layer2_text": "\n\n".join(layer2_parts),
+            "layer3_text": "\n\n".join(layer3_parts),
             "token_usage": {
+                "layer1": layer1_tokens,
+                "layer2": layer2_tokens,
+                "layer3": layer3_tokens,
                 "total": allocation.used_tokens,
-                "remaining": allocation.remaining_tokens,
-                "t0_reserved": allocation.t0_reserved,
-                "t1_allocated": allocation.t1_allocated,
-                "t2_allocated": allocation.t2_allocated,
-                "t3_allocated": allocation.t3_allocated,
-                "compression_applied": allocation.compression_applied,
-                "compression_log": allocation.compression_log,
             },
         }
 

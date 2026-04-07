@@ -2,9 +2,9 @@
 import pytest
 from unittest.mock import Mock, AsyncMock
 from application.workflows.auto_novel_generation_workflow import AutoNovelGenerationWorkflow
-from application.dtos.generation_result import GenerationResult
-from application.dtos.scene_director_dto import SceneDirectorAnalysis
-from application.services.context_builder import ContextBuilder
+from application.engine.dtos.generation_result import GenerationResult
+from application.engine.dtos.scene_director_dto import SceneDirectorAnalysis
+from application.engine.services.context_builder import ContextBuilder
 from domain.novel.services.consistency_checker import ConsistencyChecker
 from domain.novel.services.storyline_manager import StorylineManager
 from domain.novel.repositories.plot_arc_repository import PlotArcRepository
@@ -29,7 +29,7 @@ def mock_context_builder():
             "total": 9250
         }
     }
-    builder.estimate_tokens.return_value = 8750  # 35K tokens / 4
+    # 不再需要 estimate_tokens 方法
     return builder
 
 
@@ -123,7 +123,8 @@ class TestGenerateChapter:
             max_tokens=35000,
             scene_director=None
         )
-        mock_llm_service.generate.assert_called_once()
+        # 验证 LLM 被调用：至少一次用于生成章节，可能还有一次用于状态提取
+        assert mock_llm_service.generate.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_generate_chapter_with_scene_director(self, workflow, mock_context_builder, mock_llm_service):

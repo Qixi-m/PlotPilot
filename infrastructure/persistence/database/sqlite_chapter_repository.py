@@ -78,7 +78,42 @@ class SqliteChapterRepository(ChapterRepository):
         return [self._row_to_chapter(row) for row in rows]
 
     def delete(self, chapter_id: ChapterId) -> None:
-        """删除章节"""
+        """删除章节
+        
+        需要先清理关联数据：
+        - triples 表通过 (novel_id, chapter_number) 外键引用章节
+        - 由于 novel_id 是 NOT NULL，ON DELETE SET NULL 会失败
+        - 所以需要先将相关 triples 的 chapter_number 设为 NULL
+        """
+        # 1. 获取章节信息以确定 novel_id 和章节号
+        chapter = self.get_by_id(chapter_id)
+        if not chapter:
+            logger.warning(f"Chapter not found for deletion: {chapter_id.value}")
+            return
+        
+        novel_id = chapter.novel_id.value if hasattr(chapter.novel_id, 'value') else chapter.novel_id
+        chapter_number = chapter.number
+        
+        # 2. 先处理 triples 表中引用此章节的记录（将 chapter_number 设为 NULL）
+        # 注意：triples 表有 FOREIGN KEY (novel_id, chapter_number) REFERENCES chapters ON DELETE SET NULL
+        # 但 novel_id 是 NOT NULL，所以直接删除章节会导致约束失败
+        # 正确做法：先将 triples 中相关记录的 chapter_number 设为 NULL
+        update_triples_sql = """
+            UPDATE triples 
+            SET chapter_number = NULL, updated_at = ?
+            WHERE novel_id = ? AND chapter_number = ?
+        """
+        now = datetime.utcnow().isoformat()
+        self.db.execute(update_triples_sql, (now, novel_id, chapter_number))
+        
+        # 3. 删除 triple_more_chapters 中关联此章节的记录
+        delete_more_sql = """
+            DELETE FROM triple_more_chapters 
+            WHERE novel_id = ? AND chapter_number = ?
+        """
+        self.db.execute(delete_more_sql, (novel_id, chapter_number))
+        
+        # 4. 删除章节
         sql = "DELETE FROM chapters WHERE id = ?"
         self.db.execute(sql, (chapter_id.value,))
         self.db.get_connection().commit()

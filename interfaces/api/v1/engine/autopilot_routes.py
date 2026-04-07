@@ -513,10 +513,12 @@ async def autopilot_chapter_stream(novel_id: str):
         }
         yield f"data: {json.dumps(init_event, ensure_ascii=False)}\n\n"
 
-        # 订阅流式内容
+        # 订阅流式内容（用于同进程场景）
         queue = streaming_bus.subscribe(novel_id)
         last_chapter_number = None
         heartbeat_counter = 0
+        # 跨进程文件读取位置（守护进程在独立进程，需通过文件通信）
+        file_position = 0
 
         try:
             while True:
@@ -554,11 +556,21 @@ async def autopilot_chapter_stream(novel_id: str):
                             }
                             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                             streaming_bus.clear(novel_id)  # 清空旧内容
+                            file_position = 0  # 重置文件读取位置
                         last_chapter_number = chapter_number
 
-                # 尝试从队列获取增量文字
+                # 尝试从队列获取增量文字（同进程场景）
+                chunk = None
                 try:
-                    chunk = await asyncio.wait_for(queue.get(), timeout=0.5)
+                    chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    pass
+
+                # 如果队列中没有数据，尝试从文件读取（跨进程场景）
+                if chunk is None:
+                    chunk, file_position = streaming_bus.get_content_from_file(novel_id, file_position)
+
+                if chunk:
                     event = {
                         "type": "chapter_chunk",
                         "message": "",
@@ -569,8 +581,6 @@ async def autopilot_chapter_stream(novel_id: str):
                         },
                     }
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                except asyncio.TimeoutError:
-                    pass
 
                 # 心跳
                 heartbeat_counter += 1
@@ -582,6 +592,9 @@ async def autopilot_chapter_stream(novel_id: str):
                     }
                     yield f"data: {json.dumps(heartbeat_event, ensure_ascii=False)}\n\n"
                     heartbeat_counter = 0
+
+                # 轮询间隔（文件读取模式下需要较小延迟）
+                await asyncio.sleep(0.1)
 
         except Exception as e:
             logger.error(f"Chapter stream error: {e}")

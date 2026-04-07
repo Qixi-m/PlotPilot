@@ -517,7 +517,14 @@ class ContextBudgetAllocator:
             return ""
         
         try:
-            bible = self.bible_repo.get_by_novel_id(novel_id)
+            # 确保 novel_id 是正确的类型
+            from domain.novel.value_objects.novel_id import NovelId
+            if isinstance(novel_id, str):
+                novel_id_obj = NovelId(novel_id)
+            else:
+                novel_id_obj = novel_id
+                
+            bible = self.bible_repo.get_by_novel_id(novel_id_obj)
             if not bible or not hasattr(bible, 'characters'):
                 return ""
             
