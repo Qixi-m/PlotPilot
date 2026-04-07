@@ -193,14 +193,21 @@ def chapter_foreshadow_suggestions(
     limit: int = Query(12, ge=1, le=50, description="返回条数上限"),
     repo: ForeshadowingRepository = Depends(get_foreshadowing_repository),
 ):
-    """本章建议回收：对 pending 伏笔按大纲词重叠打分（非持久化）。"""
+    """本章建议回收：按预期回收章节临近度 + 大纲语义匹配排序。
+
+    排序策略：
+    1. 优先级1：已到期伏笔（suggested_resolve_chapter <= 当前章节）
+    2. 优先级2：即将到期伏笔（suggested_resolve_chapter 在当前章节 +3 章内）
+    3. 优先级3：待回收但未设置预期章节的伏笔（按词重叠分排序）
+    4. 其他按（距离 - 词重叠分）综合排序
+    """
     try:
         registry = repo.get_by_novel_id(NovelId(novel_id))
         if not registry:
             raise HTTPException(status_code=404, detail=f"Novel {novel_id} not found")
 
         # 合并 foreshadowings（旧）和 subtext_entries（新）
-        all_pending: List[Tuple[str, float]] = []  # (text, score)
+        all_pending: List[Tuple[str, float, int, str]] = []  # (id, score, priority, importance)
         entry_map: Dict[str, SubtextEntryResponse] = {}
 
         # 1. 从 foreshadowings 获取 pending 条目
@@ -209,8 +216,30 @@ def chapter_foreshadow_suggestions(
             if f.status == ForeshadowingStatus.PLANTED:
                 text = f.description
                 sc = _outline_clue_overlap_score(outline, text)
-                if sc >= min_score:
-                    all_pending.append((f.id, sc))
+                
+                # 计算优先级（距离当前章节的临近度）
+                if f.suggested_resolve_chapter:
+                    if f.suggested_resolve_chapter <= chapter_number:
+                        # 已到期，最高优先级
+                        priority = 0
+                    elif f.suggested_resolve_chapter <= chapter_number + 3:
+                        # 即将到期（3章内），高优先级
+                        priority = 1
+                    else:
+                        # 未到期，按距离排序（距离越小越靠前）
+                        priority = 2 + (f.suggested_resolve_chapter - chapter_number)
+                else:
+                    # 无预期章节，默认优先级（放后面）
+                    priority = 1000
+                
+                # 重要性加成
+                importance_bonus = f.importance.value * 10  # 1-4 -> 10-40
+                
+                # 综合分数：优先级为主，词重叠和重要性为辅
+                combined_score = -priority + sc * 100 + importance_bonus
+                
+                if sc >= min_score or priority <= 1:  # 已到期或即将到期的必返回
+                    all_pending.append((f.id, combined_score, priority, f.importance.value))
                     entry_map[f.id] = SubtextEntryResponse(
                         id=f.id,
                         chapter=f.planted_in_chapter,
@@ -229,11 +258,29 @@ def chapter_foreshadow_suggestions(
                     [e.hidden_clue, e.character_id, " ".join(e.sensory_anchors.values())]
                 )
                 sc = _outline_clue_overlap_score(outline, text)
-                if sc >= min_score:
-                    all_pending.append((e.id, sc))
+                
+                # 计算优先级
+                if e.suggested_resolve_chapter:
+                    if e.suggested_resolve_chapter <= chapter_number:
+                        priority = 0  # 已到期
+                    elif e.suggested_resolve_chapter <= chapter_number + 3:
+                        priority = 1  # 即将到期
+                    else:
+                        priority = 2 + (e.suggested_resolve_chapter - chapter_number)
+                else:
+                    priority = 1000  # 无预期章节
+                
+                importance_map = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+                importance_val = importance_map.get(getattr(e, 'importance', 'medium'), 2)
+                importance_bonus = importance_val * 10
+                
+                combined_score = -priority + sc * 100 + importance_bonus
+                
+                if sc >= min_score or priority <= 1:
+                    all_pending.append((e.id, combined_score, priority, importance_val))
                     entry_map[e.id] = _entry_to_response(e)
 
-        # 排序并取 top
+        # 按综合分数排序（分数越高越靠前）
         all_pending.sort(key=lambda x: x[1], reverse=True)
         top = all_pending[:limit]
 
@@ -245,20 +292,33 @@ def chapter_foreshadow_suggestions(
             ChapterForeshadowSuggestionItem(
                 entry=entry_map[eid],
                 score=round(sc, 4),
-                reason="大纲与伏笔/锚点词重叠",
+                reason=_build_suggestion_reason(priority, sc),
             )
-            for eid, sc in top
+            for eid, sc, priority, _ in top
         ]
 
         return ChapterForeshadowSuggestionsResponse(
             chapter_number=chapter_number,
             outline_excerpt=excerpt,
             items=items,
+            note="排序规则：①已到期伏笔优先 ②即将到期次之 ③大纲语义匹配度 ④重要性加权",
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _build_suggestion_reason(priority: int, overlap_score: float) -> str:
+    """构建推荐原因说明。"""
+    if priority == 0:
+        return "⚠️ 已到期：预期回收章节已过，建议尽快回收"
+    elif priority == 1:
+        return "🔔 即将到期：预期在未来3章内回收"
+    elif priority < 1000:
+        return f"📋 预期在第 {priority - 1} 章后回收 · 词重叠:{overlap_score:.2f}"
+    else:
+        return f"📝 待回收 · 词重叠:{overlap_score:.2f}"
 
 
 @router.get("/novels/{novel_id}/foreshadow-ledger/{entry_id}", response_model=SubtextEntryResponse)
