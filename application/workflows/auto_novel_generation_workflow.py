@@ -198,7 +198,8 @@ class AutoNovelGenerationWorkflow:
         novel_id: str,
         chapter_number: int,
         outline: str,
-        scene_director: Optional[SceneDirectorAnalysis] = None
+        scene_director: Optional[SceneDirectorAnalysis] = None,
+        enable_beats: bool = True
     ) -> GenerationResult:
         """生成章节（完整工作流）
 
@@ -235,19 +236,65 @@ class AutoNovelGenerationWorkflow:
         logger.info(f"  ✓ 上下文已构建: {len(context)} 字符, 约 {context_tokens} tokens")
 
         logger.info("阶段 3: 生成 - 调用 LLM")
-        prompt = self._build_prompt(
-            context,
-            outline,
-            storyline_context=bundle["storyline_context"],
-            plot_tension=bundle["plot_tension"],
-            style_summary=bundle["style_summary"],
-            voice_anchors=bundle.get("voice_anchors") or "",
-        )
-        config = GenerationConfig()
-        logger.info(f"  → 发送请求到 LLM (max_tokens={config.max_tokens}, temperature={config.temperature})")
-        llm_result = await self.llm_service.generate(prompt, config)
-        content = llm_result.content
-        logger.info(f"  ✓ LLM 响应已接收: {len(content)} 字符")
+        
+        # 如果使用节拍模式，先放大节拍
+        beats = []
+        if enable_beats:
+            logger.info("  → 启用节拍模式，拆分大纲为微观节拍")
+            beats = self.context_builder.magnify_outline_to_beats(outline)
+            logger.info(f"  ✓ 已拆分为 {len(beats)} 个微观节拍")
+        
+        # 根据是否使用节拍选择不同的生成策略
+        if enable_beats and beats:
+            # 按节拍生成
+            content_parts = []
+            for i, beat in enumerate(beats):
+                beat_prompt_text = self.context_builder.build_beat_prompt(beat, i, len(beats))
+                logger.info(f"生成节拍 {i+1}/{len(beats)}: {beat.focus} - {beat.description[:50]}...")
+                
+                prompt = self._build_prompt(
+                    context,
+                    outline,
+                    storyline_context=bundle["storyline_context"],
+                    plot_tension=bundle["plot_tension"],
+                    style_summary=bundle["style_summary"],
+                    beat_prompt=beat_prompt_text,
+                    beat_index=i,
+                    total_beats=len(beats),
+                    beat_target_words=beat.target_words,
+                    voice_anchors=bundle.get("voice_anchors") or "",
+                )
+                
+                llm_result = await self.llm_service.generate(prompt, config)
+                beat_content = llm_result.content
+                content_parts.append(beat_content)
+            
+            content = "".join(content_parts)
+            logger.info(f"  ✓ 节拍生成完成: {len(beats)} 个节拍, {len(content)} 字符")
+        else:
+            # 传统单段生成
+            prompt = self._build_prompt(
+                context,
+                outline,
+                storyline_context=bundle["storyline_context"],
+                plot_tension=bundle["plot_tension"],
+                style_summary=bundle["style_summary"],
+                voice_anchors=bundle.get("voice_anchors") or "",
+            )
+            logger.info(f"  → 发送请求到 LLM (max_tokens={config.max_tokens}, temperature={config.temperature})")
+            llm_result = await self.llm_service.generate(prompt, config)
+            content = llm_result.content
+            logger.info(f"  ✓ LLM 响应已接收: {len(content)} 字符")
+        
+        # 保存微观节拍用于后续处理
+        if beats:
+            bundle["micro_beats"] = [
+                {
+                    "description": beat.description,
+                    "target_words": beat.target_words,
+                    "focus": beat.focus
+                } for beat in beats
+            ]
 
         logger.info("阶段 4: 后处理（post_process_generated_chapter）")
         post = await self.post_process_generated_chapter(
@@ -281,7 +328,8 @@ class AutoNovelGenerationWorkflow:
         novel_id: str,
         chapter_number: int,
         outline: str,
-        scene_director: Optional[SceneDirectorAnalysis] = None
+        scene_director: Optional[SceneDirectorAnalysis] = None,
+        enable_beats: bool = True
     ) -> AsyncIterator[Dict[str, Any]]:
         """流式生成章节：阶段事件 + 正文 token 流 + 最终 done（含一致性报告）。
 
@@ -313,36 +361,94 @@ class AutoNovelGenerationWorkflow:
 
             yield {"type": "phase", "phase": "llm"}
             logger.info("阶段 3: 生成 - 调用 LLM 流式生成")
-            prompt = self._build_prompt(
-                context,
-                outline,
-                storyline_context=bundle["storyline_context"],
-                plot_tension=bundle["plot_tension"],
-                style_summary=bundle["style_summary"],
-                voice_anchors=bundle.get("voice_anchors") or "",
-            )
-            config = GenerationConfig()
-            logger.info(f"  → 发送流式请求到 LLM")
-            parts: list[str] = []
-            chunk_count = 0
-            total_chars = 0
-            async for piece in self.llm_service.stream_generate(prompt, config):
-                parts.append(piece)
-                chunk_count += 1
-                total_chars += len(piece)
-                # 增强事件：包含累计字数和预估 token（中文约 1.5 字/token，英文约 4 字/token）
-                estimated_tokens = int(total_chars / 1.5)  # 简化估算
+            
+            # 如果使用节拍模式，先放大节拍
+            beats = []
+            if enable_beats:
+                logger.info("  → 启用节拍模式，拆分大纲为微观节拍")
+                beats = self.context_builder.magnify_outline_to_beats(outline)
+                logger.info(f"  ✓ 已拆分为 {len(beats)} 个微观节拍")
+                
+                # 发送节拍信息用于前端展示
                 yield {
-                    "type": "chunk", 
-                    "text": piece,
-                    "stats": {
-                        "chars": total_chars,
-                        "chunks": chunk_count,
-                        "estimated_tokens": estimated_tokens,
-                    }
+                    "type": "beats_generated",
+                    "beats": [
+                        {
+                            "description": beat.description,
+                            "target_words": beat.target_words,
+                            "focus": beat.focus
+                        } for beat in beats
+                    ]
                 }
+            
+            # 根据是否使用节拍选择不同的生成策略
+            if enable_beats and beats:
+                # 按节拍生成
+                content_parts = []
+                for i, beat in enumerate(beats):
+                    beat_prompt_text = self.context_builder.build_beat_prompt(beat, i, len(beats))
+                    logger.info(f"生成节拍 {i+1}/{len(beats)}: {beat.focus} - {beat.description[:50]}...")
+                    
+                    prompt = self._build_prompt(
+                        context,
+                        outline,
+                        storyline_context=bundle["storyline_context"],
+                        plot_tension=bundle["plot_tension"],
+                        style_summary=bundle["style_summary"],
+                        beat_prompt=beat_prompt_text,
+                        beat_index=i,
+                        total_beats=len(beats),
+                        beat_target_words=beat.target_words,
+                        voice_anchors=bundle.get("voice_anchors") or "",
+                    )
+                    
+                    beat_content = ""
+                    async for piece in self.llm_service.stream_generate(prompt, config):
+                        beat_content += piece
+                        yield {
+                            "type": "chunk", 
+                            "text": piece,
+                            "beat_index": i,
+                            "beat_focus": beat.focus
+                        }
+                    
+                    content_parts.append(beat_content)
+                    yield {"type": "beat_done", "beat_index": i, "beat_content_length": len(beat_content)}
+                
+                content = "".join(content_parts)
+            else:
+                # 传统单段生成
+                prompt = self._build_prompt(
+                    context,
+                    outline,
+                    storyline_context=bundle["storyline_context"],
+                    plot_tension=bundle["plot_tension"],
+                    style_summary=bundle["style_summary"],
+                    voice_anchors=bundle.get("voice_anchors") or "",
+                )
+                
+                config = GenerationConfig()
+                logger.info(f"  → 发送流式请求到 LLM")
+                parts: list[str] = []
+                chunk_count = 0
+                total_chars = 0
+                async for piece in self.llm_service.stream_generate(prompt, config):
+                    parts.append(piece)
+                    chunk_count += 1
+                    total_chars += len(piece)
+                    # 增强事件：包含累计字数和预估 token（中文约 1.5 字/token，英文约 4 字/token）
+                    estimated_tokens = int(total_chars / 1.5)  # 简化估算
+                    yield {
+                        "type": "chunk", 
+                        "text": piece,
+                        "stats": {
+                            "chars": total_chars,
+                            "chunks": chunk_count,
+                            "estimated_tokens": estimated_tokens,
+                        }
+                    }
 
-            content = "".join(parts)
+                content = "".join(parts)
             logger.info(f"  ✓ LLM 流式响应完成: {chunk_count} 个块, {len(content)} 字符")
 
             if not content.strip():
