@@ -47,13 +47,13 @@ class SandboxDialogueService:
             # Extract tags, handle None case
             tags = event.get("tags") or []
 
-            # Filter events with dialogue tags
-            dialogue_tags = [tag for tag in tags if tag.startswith("对白:")]
+            # Filter events with dialogue tags（兼容 "对话:" 和旧版 "对白:"）
+            dialogue_tags = [tag for tag in tags if tag.startswith("对话:") or tag.startswith("对白:")]
 
             if not dialogue_tags:
                 continue
 
-            # Extract speaker from tag (format: "对白:张三")
+            # Extract speaker from tag (format: "对话:张三" or "对白:张三")
             event_speaker = dialogue_tags[0].split(":", 1)[1] if ":" in dialogue_tags[0] else ""
 
             # Apply chapter filter
